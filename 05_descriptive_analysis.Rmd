@@ -2,7 +2,9 @@
 title: "Descriptive_analysis"
 author: "KBazemore"
 date: "2024-12-02"
-output: html_document
+output:
+  word_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}

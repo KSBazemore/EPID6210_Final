@@ -18,7 +18,7 @@ library(bigsnpr)
 
 ```{r}
 #Read in source PRS file
-prs <- read.table("prsonly.tosto.txt", header = T)
+prs <- read.table("data/prsonly.tosto.txt", header = T)
 
 #Write table of just included rsIDs for genetic data filtering
 snps <- prs$rsID
@@ -37,7 +37,7 @@ Run 04b_filter_ukbb.sh in terminal
 
 Loading & formatting target data (UK Biobank genetic data)
 ```{r}
-snp_readBed("data/filtered_cohort.bed")
+#snp_readBed("data/filtered_cohort.bed") #this only needs to be run once
 
 target <- snp_attach("data/filtered_cohort.rds")
 
@@ -81,6 +81,7 @@ write.table(info_snp, "/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID621
 
 Run 04c_run_score.sh in terminal
 
+Option A
 ```{r}
 #Read in estimated scores
 scores <- read.table("/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/scored_cohort.sscore") %>%
@@ -98,7 +99,25 @@ ukbbdat <- dplyr::left_join(int8, scores, by = "eid")
 saveRDS(ukbbdat, file = "/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/Prepped_UKBB.rds")
 ```
 
+Option B
+```{r}
+#Read in estimated scores
+scores <- read.table("/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/scored_cohortB.sscore") %>%
+  dplyr::select(V1, V6)
 
+names(scores) <- c("eid", "score")
 
+#Standardizing scores to st normal distrib
+scores <- scores %>% dplyr::mutate(score.norm = as.numeric(scale(score)))
+
+#Read in other covariate data
+int8 <- readRDS("data/included_cohortB.rds")
+
+#Merge scores with other covariate data
+ukbbdat <- dplyr::left_join(int8, scores, by = "eid")
+
+#Save prepared data file
+saveRDS(ukbbdat, file = "/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/Prepped_UKBB_B.rds")
+```
 
 
