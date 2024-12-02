@@ -1,0 +1,189 @@
+---
+title: "AD_Phenotyping"
+author: "KBazemore"
+date: "2024-09-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+knitr::opts_knit$set(root.dir = "/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/pathPRS-UKBB/phenotype")
+```
+
+Loading libraries
+```{r}
+library(dplyr)
+library(gtsummary)
+library(cardx)
+library(gt)
+```
+
+
+UKBB Participant Inclusion/Exclusion
+
+Input files
+```{r}
+#Phenotype file eg sex, PCs
+phenotypes <- read.csv("/home/bazemork/Covariates/phenotypes.csv", header = T)
+
+#Enviro covariates file 
+enviro <- read.csv("/home/bazemork/Covariates/enviro.csv", header = T)
+
+#AD Pheno and popdense variable
+exp_out <- read.table("/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/popdense_covar.txt", header = T)
+
+#UKBiobank withdrawals
+withdrawals <- read.csv("/home/bazemork/UKB_Withdrawals/ids_to_remove_nodups01112024.csv", header = T)
+```
+
+
+Applying inclusion/exclusion criteria
+
+Step 1
+```{r}
+int1 <- dplyr::filter(phenotypes, genetic_grouping ==1)
+
+
+print(paste0("Number of UKBB participants with genetic similarity to European reference populations: ", nrow(int1), "  Number of participants with genetic similarity to non-European reference populations: ", nrow(phenotypes)-nrow(int1)))
+rm(phenotypes)
+```
+Step 2
+```{r}
+#Steps 2a - 2d
+int2a <- dplyr::filter(int1, is.na(outlier_het_miss))
+print(paste0("Outliers for heterozygosity and missingness: ", nrow(int1)-nrow(int2a)))
+rm(int1)
+
+int2b <- dplyr::filter(int2a, kinship !=10)
+print(paste0("Relatedness: ", nrow(int2a)-nrow(int2b)))
+rm(int2a)
+
+int2c <- dplyr::filter(int2b, is.na(sex_aneuploidy))
+print(paste0("Sex chromosome aneuploidy: ", nrow(int2b)-nrow(int2c)))
+rm(int2b)
+
+int2d <- dplyr::filter(int2c, inpca ==1)
+print(paste0("Not included in PCA: ", nrow(int2c)-nrow(int2d)))
+rm(int2c)
+```
+
+Step 3
+```{r}
+#Remove withdrawals
+int3 <- dplyr::filter(int2d, !eid %in% withdrawals$x) 
+
+print(paste0("Withdrawals removed: ", nrow(int2d)-nrow(int3)))
+
+print(paste0("Total passed QC and in PCA and did not withdraw: ", nrow(int3)))
+
+rm(withdrawals, int2d)
+```
+
+Step 4
+```{r}
+#Inclusion of participants dwelling in England/Wales in top four pop density categories
+top_cats <- c(5, 6, 7, 8)
+EW_topCat <- exp_out %>% dplyr::filter(f.20118.0.0 %in% top_cats)
+
+int4 <- int3 %>% dplyr::filter(eid %in% EW_topCat$f.eid)
+print(paste0("Exclusion due to non-top pop density categories: ", nrow(int3)-nrow(int4)))
+rm(top_cats, int3, exp_out)
+```
+
+Step 5
+```{r}
+#Inclusion of participants 60 and over
+int5 <- int4 %>% dplyr::filter(participant_age_recriutment >= 60)
+print(paste0("Exclusion of those under 60: ", nrow(int4)-nrow(int5)))
+rm(int4)
+```
+
+AD Phenotype
+```{r}
+ad_codes <- c(11, 12, 21, 22)
+EW_topCat2 <- EW_topCat %>% 
+  dplyr::mutate(AD = case_when(f.42021.0.0 %in% ad_codes ~ 1, TRUE ~ 0)) %>% 
+  dplyr::rename(eid = f.eid, pop_cat = f.20118.0.0) %>%
+  dplyr::select(eid, pop_cat, AD)
+
+int6 <- dplyr::left_join(int5, EW_topCat2) %>%
+  dplyr::select(eid, AD, pop_cat, participant_age_recriutment, sex, current_smoking, past_smoking, etoh_intake, etoh_10yrsago, pc1, pc2, pc3, pc4)
+rm(int5, EW_topCat, EW_topCat2)
+```
+
+Other Environmental Variables
+```{r}
+int7 <- dplyr::left_join(int6, enviro)
+rm(int6, enviro)
+```
+
+Adding in information on APOE haplotype
+```{r}
+#Reading in data on APOE marker variants
+APOE_training <- read.table("/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/Kunkle_pathPRS/recoded_training_APOE2.raw", header = T) %>% 
+  dplyr::select(IID, rs429358_T, rs7412_C)
+
+APOE_testing <- read.table("/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/Kunkle_pathPRS/recoded_testing_APOE2.raw", header = T) %>% 
+  dplyr::select(IID, rs429358_T, rs7412_C)
+
+#Merging data and recoding for APOE (haplotype) alleles
+APOE <- rbind(APOE_training, APOE_testing) %>% 
+  dplyr::mutate(
+    rs429358 = case_when(rs429358_T == 0 ~ "CC", 
+                         rs429358_T == 1 ~ "CT", 
+                         rs429358_T == 2 ~ "TT"), 
+    rs7412 = case_when(rs7412_C == 0 ~ "TT", 
+                       rs7412_C == 1 ~ "CT", 
+                       rs7412_C == 2 ~ "CC"),
+    eid = IID) %>%
+  dplyr::mutate(
+    apoe1 = case_when(rs429358 == "CC" & rs7412 == "CC" ~ 4, 
+                      rs429358 == "CT" & rs7412 == "CC" ~ 4, 
+                      rs429358 == "TT" & rs7412 == "CC" ~ 3, 
+                      rs429358 == "CT" & rs7412 == "CT" ~ 2, 
+                      rs429358 == "TT" & rs7412 == "CT" ~ 2, 
+                      rs429358 == "TT" & rs7412 == "TT" ~ 2), 
+    apoe2 = case_when(rs429358 == "CC" & rs7412 == "CC" ~ 4, 
+                      rs429358 == "CT" & rs7412 == "CC" ~ 3, 
+                      rs429358 == "TT" & rs7412 == "CC" ~ 3, 
+                      rs429358 == "CT" & rs7412 == "CT" ~ 4, 
+                      rs429358 == "TT" & rs7412 == "CT" ~ 3, 
+                      rs429358 == "TT" & rs7412 == "TT" ~ 2)) %>%
+  dplyr::mutate(e4_count = case_when(apoe1 == 4 & apoe2 == 4 ~ 2, 
+                                     apoe1 !=4 & apoe2 == 4 ~ 1, 
+                                     apoe1 == 4 & apoe2 != 4 ~ 1, 
+                                     apoe1 != 4 & apoe2 != 4 ~ 0)) %>%
+  dplyr::select(eid, e4_count, apoe1, apoe2)
+
+#Table of e4 allele count 
+table(APOE$e4_count)
+
+#Table of APOE allele 1 vs allele 2
+table(APOE$apoe1, APOE$apoe2)
+
+#Merging APOE data with cohort phenotype data
+int8 <- merge(APOE, int7, by = "eid")
+print(paste0("Exclusion of those without APOE data: ", nrow(int7)-nrow(int8)))
+rm(int7, APOE, APOE_testing, APOE_training)
+```
+
+Saving UKBB phenotype data post inclusion/exclusion, phenotyping and APOE haplotypes (still need to add PRS exposure)
+```{r}
+saveRDS(int8, file = "/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/included_cohort.rds")
+
+int8 <- readRDS("/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/included_cohort.rds")
+
+IID <- int8$eid
+FID <- int8$eid
+
+eids <- as.data.frame(cbind(IID, FID))
+
+#write table of just included eids for genetic data filtering and estimation of PRS
+
+write.table(eids, file = "/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/included_eids.txt", quote = F, row.names = F, col.names = F)
+```
+
+
+
+

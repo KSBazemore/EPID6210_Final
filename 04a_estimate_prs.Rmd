@@ -1,0 +1,104 @@
+---
+title: "PRS_Estimation"
+author: "KBazemore"
+date: "2024-12-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+knitr::opts_knit$set(root.dir = "/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final")
+```
+
+```{r}
+library(dplyr)
+library(bigsnpr)
+```
+
+```{r}
+#Read in source PRS file
+prs <- read.table("prsonly.tosto.txt", header = T)
+
+#Write table of just included rsIDs for genetic data filtering
+snps <- prs$rsID
+
+#Check SNP rsIDs for inclusion in qc'd UK Biobank data across SNP synonyms (synonyms list in /bazemork/applications/magma/g1000_eur.synonyms)
+  #row 2: 6733839 60004446 This SNP not in qc'd UK Biobank data under either synonym
+  #row 4: 190982 1617210 17495277 58611513 This SNP not in qc'd UK Biobank data under any synonym
+  #row 11: 9331896 57548489 This SNP not in qc'd UK Biobank data under any synonym
+  #All other SNPs in UK Biobank data
+
+#Saving rsID file for filtering
+write.table(snps, file = "/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/included_snps.txt", quote = F, row.names = F, col.names = F)
+```
+
+Run 04b_filter_ukbb.sh in terminal
+
+Loading & formatting target data (UK Biobank genetic data)
+```{r}
+snp_readBed("data/filtered_cohort.bed")
+
+target <- snp_attach("data/filtered_cohort.rds")
+
+str(target, max.level = 2, strict.width = "cut")
+
+map <- target$map[,-(2:3)]
+names(map) <- c("chr", "pos", "a0", "a1")
+```
+
+Formatting base data (prs summary stats)
+```{r}
+#Selecting necessary columns and renaming
+prs2 <- prs %>% dplyr::select(chr_name, rsID, chr_position, effect_allele, hm_inferOtherAllele, effect_weight) %>%
+  dplyr::rename(chr = chr_name, rsid = rsID, pos = chr_position, a0 = effect_allele, a1 = hm_inferOtherAllele, beta = effect_weight)
+
+#Multialleleics; check allele 2 in UKBB data and update prs2
+prs2$a1[1] <- "G"
+prs2$a1[5] <- "A"
+prs2$a1[8] <- "T"
+prs2$a1[14] <- "G"
+prs2$a1[19] <- "G"
+
+#Remove rows with SNPs not in UKBB data
+exclude_snps <- c("rs6733839", "rs190982", "rs9331896")
+prs2 <- prs2 %>% dplyr::filter(!rsid %in% exclude_snps)
+```
+
+Aligning effect & ref alleles between base and target
+```{r}
+info_snp <- snp_match(prs2, map)
+```
+
+Writing files for use in individual score estimation
+```{r}
+rsIDs <- info_snp$rsid
+
+write.table(rsIDs, "/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/included_snps_final.txt", quote = F, row.names = F, col.names = F)
+
+write.table(info_snp, "/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/bigsnpr_info_snp.txt", quote = F, row.names = F, col.names = F)
+```
+
+Run 04c_run_score.sh in terminal
+
+```{r}
+#Read in estimated scores
+scores <- read.table("/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/scored_cohort.sscore") %>%
+  dplyr::select(V1, V6)
+
+names(scores) <- c("eid", "score")
+
+#Standardizing scores to st normal distrib
+scores <- scores %>% dplyr::mutate(score.norm = as.numeric(scale(score)))
+
+#Merge scores with other covariate data
+ukbbdat <- dplyr::left_join(int8, scores, by = "eid")
+
+#Save prepared data file
+saveRDS(ukbbdat, file = "/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/Prepped_UKBB.rds")
+```
+
+
+
+
+
