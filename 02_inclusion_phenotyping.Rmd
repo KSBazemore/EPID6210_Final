@@ -80,7 +80,7 @@ print(paste0("Total passed QC and in PCA and did not withdraw: ", nrow(int3)))
 rm(withdrawals, int2d)
 ```
 
-Step 4
+Step 4 - option A
 ```{r}
 #Inclusion of participants dwelling in England/Wales in top four pop density categories
 top_cats <- c(5, 6, 7, 8)
@@ -91,7 +91,48 @@ print(paste0("Exclusion due to non-top pop density categories: ", nrow(int3)-nro
 rm(top_cats, int3, exp_out)
 ```
 
-Step 5
+Step4 - Option B
+```{r}
+fluid_values <- c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)
+
+exp_out2 <- exp_out %>%
+  dplyr::mutate(meas0 = case_when(f.20016.0.0 %in% fluid_values ~ 1, TRUE ~0),
+                meas1 = case_when(f.20016.1.0 %in% fluid_values ~ 1, TRUE ~0),
+                meas2 = case_when(f.20016.2.0 %in% fluid_values ~ 1, TRUE ~0),
+                meas3 = case_when(f.20016.3.0 %in% fluid_values ~ 1, TRUE ~0))
+
+meas0_eids <- exp_out2 %>%
+  dplyr::filter(meas0 == 1) %>%
+  .$f.eid
+
+meas1_eids <- exp_out2 %>%
+  dplyr::filter(meas1 == 1) %>%
+  .$f.eid
+
+meas2_eids <- exp_out2 %>%
+  dplyr::filter(meas2 == 1) %>%
+  .$f.eid
+
+meas3_eids <- exp_out2 %>%
+  dplyr::filter(meas3 == 1) %>%
+  .$f.eid
+
+length(meas0_eids) #165,408 measured at baseline
+
+length(meas1_eids[meas1_eids %in% meas0_eids]) #4695 eids measured at 0 were also measured at 1
+length(meas2_eids[meas2_eids %in% meas0_eids]) #21254 eids measured at 0 were also measured at 2
+length(meas3_eids[meas3_eids %in% meas0_eids]) #1886 eids measured at 0 were also measured at 3
+
+#Include only those with measurement at baseline and at least one other timepoint
+exp_out3 <- exp_out2 %>%
+  dplyr::filter(meas0 == 1 & (meas1 == 1 | meas2 == 1 | meas3 == 1))
+
+int4 <- int3 %>% dplyr::filter(eid %in% exp_out3$f.eid)
+print(paste0("Exclusion due insufficient repeated measures of fluid intelligence: ", nrow(int3)-nrow(int4)))
+rm(int3, exp_out, exp_out2)
+```
+
+Step 5 - option A
 ```{r}
 #Inclusion of participants 60 and over
 int5 <- int4 %>% dplyr::filter(participant_age_recriutment >= 60)
@@ -99,7 +140,25 @@ print(paste0("Exclusion of those under 60: ", nrow(int4)-nrow(int5)))
 rm(int4)
 ```
 
-AD Phenotype
+Step 5 - option B
+```{r}
+#See how many subjects I would have if I restricted to age over 50
+out_eids <- exp_out3$f.eid
+
+test2 <- int3 %>%
+  dplyr::filter(participant_age_recriutment >=50) %>%
+  .$eid
+
+length(out_eids[out_eids %in% test2])
+
+#Inclusion of participants 60 and over
+int5 <- int4 %>% dplyr::filter(participant_age_recriutment >= 50)
+print(paste0("Exclusion of those under 50: ", nrow(int4)-nrow(int5)))
+rm(int4)
+```
+
+
+AD Phenotype - option A
 ```{r}
 ad_codes <- c(11, 12, 21, 22)
 EW_topCat2 <- EW_topCat %>% 
@@ -110,6 +169,19 @@ EW_topCat2 <- EW_topCat %>%
 int6 <- dplyr::left_join(int5, EW_topCat2) %>%
   dplyr::select(eid, AD, pop_cat, participant_age_recriutment, sex, current_smoking, past_smoking, etoh_intake, etoh_10yrsago, pc1, pc2, pc3, pc4)
 rm(int5, EW_topCat, EW_topCat2)
+```
+
+AD Phenotype - option B
+```{r}
+ad_codes <- c(11, 12, 21, 22)
+exp_out3 <- exp_out3 %>% 
+  dplyr::mutate(AD = case_when(f.42021.0.0 %in% ad_codes ~ 1, TRUE ~ 0)) %>% 
+  dplyr::rename(eid = f.eid, pop_cat = f.20118.0.0, M0 = f.20016.0.0, M1 = f.20016.1.0, M2 = f.20016.2.0, M3 = f.20016.3.0,) %>%
+  dplyr::select(eid, pop_cat, AD, M1, M2, M3, M0, meas0, meas1, meas2, meas3)
+
+int6 <- dplyr::left_join(int5, exp_out3) %>%
+  dplyr::select(eid, AD, pop_cat, participant_age_recriutment, sex, current_smoking, past_smoking, etoh_intake, etoh_10yrsago, pc1, pc2, pc3, pc4, M1, M2, M3, M0, meas0, meas1, meas2, meas3)
+rm(int5, exp_out3)
 ```
 
 Other Environmental Variables
@@ -168,7 +240,7 @@ print(paste0("Exclusion of those without APOE data: ", nrow(int7)-nrow(int8)))
 rm(int7, APOE, APOE_testing, APOE_training)
 ```
 
-Saving UKBB phenotype data post inclusion/exclusion, phenotyping and APOE haplotypes (still need to add PRS exposure)
+Saving UKBB phenotype data post inclusion/exclusion, phenotyping and APOE haplotypes (still need to add PRS exposure) - option A
 ```{r}
 saveRDS(int8, file = "/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/included_cohort.rds")
 
@@ -182,6 +254,22 @@ eids <- as.data.frame(cbind(IID, FID))
 #write table of just included eids for genetic data filtering and estimation of PRS
 
 write.table(eids, file = "/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/included_eids.txt", quote = F, row.names = F, col.names = F)
+```
+
+Saving UKBB phenotype data post inclusion/exclusion, phenotyping and APOE haplotypes (still need to add PRS exposure) - option B
+```{r}
+saveRDS(int8, file = "/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/included_cohortB.rds")
+
+int8 <- readRDS("/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/included_cohortB.rds")
+
+IID <- int8$eid
+FID <- int8$eid
+
+eids <- as.data.frame(cbind(IID, FID))
+
+#write table of just included eids for genetic data filtering and estimation of PRS
+
+write.table(eids, file = "/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/EPID6210_Final/data/included_eidsB.txt", quote = F, row.names = F, col.names = F)
 ```
 
 

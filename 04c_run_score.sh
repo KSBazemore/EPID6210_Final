@@ -9,5 +9,5 @@ PLINK2="/s3buckets/adamnaj-lab-psom-s3-bucket-01/bazemork/applications/plink/pli
 $PLINK2 --pfile ../Kunkle_pathPRS/qc_out/final/ukb_imp_eur_prs_qc_v3_merge_biallelic \
 	--score data/bigsnpr_info_snp.txt 5 3 6 header \
 	--extract data/included_snps_final.txt \
-	--keep data/included_eids.txt \
-	--out data/scored_cohort
+	--keep data/included_eidsB.txt \
+	--out data/scored_cohortB
