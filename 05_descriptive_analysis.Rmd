@@ -22,10 +22,10 @@ library(ggplot2)
 library(dplyr)
 library(corrr)
 
-url <- "https://cran.r-project.org/src/contrib/Archive/qlspack/qlspack_2.2.tar.gz"
-pkgFile <- "qlspack_2.2.tar.gz"
-download.file(url = url, destfile = pkgFile)
-install.packages(pkgs=pkgFile, type="source", repos=NULL)
+#url <- "https://cran.r-project.org/src/contrib/Archive/qlspack/qlspack_2.2.tar.gz"
+#pkgFile <- "qlspack_2.2.tar.gz"
+#download.file(url = url, destfile = pkgFile)
+#install.packages(pkgs=pkgFile, type="source", repos=NULL)
 library(qlspack)
 ```
 
@@ -34,28 +34,7 @@ Read in data
 ukbbdat <- readRDS("data/Prepped_UKBB_B.rds")
 ```
 
-
-Demographics table - Option A
-```{r}
-ukbbdat$pop_cat <- factor(ukbbdat$pop_cat, levels = c(5, 6, 7, 8), labels = c("Urban", "Town and Fringe", "Village", "Hamlet and Isolated Dwelling"))
-ukbbdat$sex <- as.factor(ukbbdat$sex)
-ukbbdat$AD <- as.factor(ukbbdat$A)
-
-ukbbdat %>% 
-  dplyr::select(AD, participant_age_recriutment, sex, e4_count, pop_cat, score.norm) %>%
-  dplyr::group_by(pop_cat) %>%
-  dplyr::summarise(n.obs = n(),
-                   Mean.PRS = format(mean(score.norm, na.rm = T), scientific = T, digits = 3),
-                   SD.PRS = round(sd(score.norm, na.rm = T), 2),
-                   Mean.Age = round(mean(participant_age_recriutment, na.rm = T), 2),
-                   SD.Age = round(sd(participant_age_recriutment, na.rm = T), 2),
-                   n.AD = sum(AD == 1, na.rm = T),
-                   per.AD = round((sum(AD == 1, na.rm = T)/n())*100, 2),
-                   per.Male = round((sum(sex == 1, na.rm = T)/n())*100, 2),   #double check that sex == 1 means male
-                   per.e4Carrier = round((sum(e4_count == 1 | e4_count ==2, na.rm = T)/n())*100, 2))
-```
-
-Demographics table - Option B
+Demographics table
 ```{r}
 ukbbdat$sex <- as.factor(ukbbdat$sex)
 ukbbdat$AD <- as.factor(ukbbdat$A)
@@ -106,18 +85,4 @@ Correlation of fluid intelligence scores over time
 ukbbdat %>% select(M0, M1, M2, M3) %>%
   correlate(., y = NULL, use ='pairwise.complete.obs', method = 'pearson')
 ```
-
-
-
-
-ICC AD & PRS by Population Category 
-```{r}
-
-```
-
-Clustering of other environmental variables within popcat?
-```{r}
-
-```
-
 
